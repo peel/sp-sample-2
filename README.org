@@ -1,0 +1,51 @@
+* Plot A CSV
+** Considerations
+*** Tech stack
+- Does it fit? - following the original discussion, how does the solution fit the team's stack
+- Agility - would it be possible to iterate on the solution for building larger scale solution on top of it
+- Simplicity - no accidental complexity, focusing on pure domain
+- Responsiveness - how the overall speed of the solution 
+  
+With that in mind I decided to use http4s as a scala backend that builds on top of fs2 streaming so that we can read the data efficiently be it from file or any other data source. 
+This enables the streaming responses as well allowing for streaming api and realtime data.
+On the frontend HyperApp - a small, functional, but very react/redux-like solution was chosen and Chart.js for charting data.
+*** Corners cut
+As any such a task it has a time constraint. Within those I decided to cut some corners that could be iterated upon:
+- chunked/streaming - streaming responses are disabled on the API so that the ui is able to read those with fetch api. In order to make use of the streaming another client - ie. hyperquest shall be used
+- code organisation - currently the solution is pretty coincise thus it does not require heavy splitting. However for future work some improvements can be done: splitting index.js into actions, state, and views including a plot component; on backend objects can be extracted into separate files, domain may be split into separate files
+- frontend specs - as I am not strictly familiar with Chart.js, and that is the only real testable component on the frontend I decided that I could only validate the overal application corectness. However extracting plot into a separate component would allow for testing it in a better way
+- split repositories - for continuous delivery it would prove to be an easier to split the ui/api into separate repositories for allowing for easier deployment based upon commits
+*** Deployment
+The solution allows for building docker containers and is orchestrated by a circleci. 
+An example of how the deliver and deploy to ECR/ECS using docker-compose.yml is stored there.
+For deployment on ECS some fine tuning has to be made to set up resources available to particular instances so an extra compose file can be set up
+To build the containers:
+#+BEGIN_SRC bash
+cd api && sbt docker:publishLocal && cd ..
+cd ui && yarn docker:build && cd ..
+#+END_SRC
+The API container uses sbt-native-packager and the UI one uses a two-stage optimised build container.
+
+** Original task
+#+BEGIN_SRC markdown
+# Data Dashboard
+
+**As a** data scientist
+
+**I would like to** visualise "yield" metric from the attached dataset on a web page
+
+**So that** my team can gain insight into current plant performance.
+
+## Acceptance criteria
+
+* The solution should be delivered as a link to a Git repository.
+* The solution should be deployable using a `docker-compose` configuration.
+* Basic tests and deployment documentation should be provided.
+
+## Additional notes
+
+* You're free to use any tech stack that you want, but please assume that some business justification might be expected from you.
+* We're looking for good engineering practices over complex answers.
+
+If anything is unclear, please feel free to ask.
+#+END_SRC

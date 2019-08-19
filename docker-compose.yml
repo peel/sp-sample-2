@@ -1,0 +1,12 @@
+version: '3'
+
+services:
+  plot-api:
+    image: peelsky/plot-api:latest
+    ports:
+      - "8080:8080"
+
+  plot-ui:
+    image: peelsky/plot-ui:latest
+    ports:
+      - "8081:80"

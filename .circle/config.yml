@@ -1,0 +1,140 @@
+defaults: &defaults
+  working_directory: /root/current
+  docker:
+    - image: hseeberger/scala-sbt:8u151-2.12.4-1.1.1
+  environment:
+    SBT_OPTS: "-XX:+CMSClassUnloadingEnabled"
+version: 2
+jobs:
+  clone:
+    <<: *defaults
+    steps:
+      - checkout
+      - run: |
+          rm -rf /root/current/.git
+  build-api:
+    <<: *defaults
+    steps:
+      - run: |
+          cd api && sbt compile test:compile exit
+      - persist_to_workspace:
+          root: /root
+          paths:
+            - current
+            - ".ivy2"
+            - ".sbt"
+  build-ui:
+    <<: *defaults
+    docker:
+      - image: node:9.9.0-alpine
+    steps:
+      - run: |
+          cd ui && sbt compile test:compile exit
+      - persist_to_workspace:
+          root: /root
+          paths:
+            - current
+  test-api:
+    <<: *defaults
+    steps:
+      - attach_workspace:
+          at: /root
+      - run: cd api && sbt test exit
+      - store_test_results:
+          path: /root/current/api/test-reports
+  docker-api:
+    <<: *defaults
+    steps:
+      - attach_workspace:
+          at: /root
+      - setup_remote_docker
+      - run: |
+          set -x
+          cd api
+          sbt docker:publishLocal exit
+          mkdir -p /tmp/circle/api/
+          cp /root/current/api/target/docker/Dockerfile /tmp/circle/api
+      - deploy:
+          shell: /bin/bash
+          command: |
+            login="$(aws ecr get-login)"
+            ${login}
+            export PROJECT_NAME=plot-api
+            export OUR_NAME=peelsky/${PROJECT_NAME}:latest
+            docker tag ${OUR_NAME} ${OUR_NAME}:${CIRCLE_SHA1}
+            docker tag ${OUR_NAME} ${OUR_NAME}:latest
+            docker push ${OUR_NAME}:${CIRCLE_SHA1}
+            docker push ${OUR_NAME}:latest
+  docker-ui:
+    <<: *defaults
+    docker:
+      - image: node:9.9.0-alpine
+    steps:
+      - attach_workspace:
+          at: /root
+      - setup_remote_docker
+      - run: |
+          set -x
+          cd ui
+          yarn docker:build
+      - deploy:
+          shell: /bin/bash
+          command: |
+            login="$(aws ecr get-login)"
+            ${login}
+            export PROJECT_NAME=plot-api
+            export OUR_NAME=peelsky/${PROJECT_NAME}:latest
+            docker tag ${OUR_NAME} ${OUR_NAME}:${CIRCLE_SHA1}
+            docker tag ${OUR_NAME} ${OUR_NAME}:latest
+            docker push ${OUR_NAME}:${CIRCLE_SHA1}
+            docker push ${OUR_NAME}:latest
+  release:
+    <<: *defaults
+    docker:
+      image: vizuri/ecs-cli
+    steps:
+      - checkout
+      - setup_remote_docker
+      - deploy:
+          shell: /bin/bash
+          command: |
+            ecs-cli compose -c plot
+workflows:
+  version: 2
+  build_test_preprod_approval_release:
+    jobs:
+      - clone
+      - build-api:
+          requires:
+            - build
+      - build-ui:
+          requires:
+            - build
+      - test-api:
+          requires:
+            - build-api
+      - docker-api:
+          context: org-global
+          filters:
+            branches:
+              only:
+                master
+          requires:
+            - test-api
+      - docker-ui:
+          context: org-global
+          filters:
+            branches:
+              only:
+                master
+          requires:
+            - build-ui
+      - release:
+          context: org-global
+          filters:
+            branches:
+              only:
+                master
+          requires:
+              - docker-api
+              - docker-ui
